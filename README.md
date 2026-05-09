@@ -1,5 +1,8 @@
 # mini-llm-gateway
 
+[![test](https://github.com/hsuanchenlin/mini-llm-gateway/actions/workflows/test.yml/badge.svg)](https://github.com/hsuanchenlin/mini-llm-gateway/actions/workflows/test.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 A lightweight, OpenAI-compatible LLM gateway in Go. Routes chat completion
 requests to pluggable backends (Ollama, OpenAI-compatible APIs, or a built-in
 `fake` provider) and ships with a small chat UI plus a SQLite-backed request
