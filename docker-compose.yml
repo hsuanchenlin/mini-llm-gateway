@@ -1,0 +1,58 @@
+# Mini LLM Gateway — local stack: gateway + Ollama.
+#
+# Usage:
+#   docker compose up --build
+#   open http://localhost:8090/
+#
+# The ollama-init service pulls llama3.2:1b (~1.3 GB) on first startup
+# into a named volume so subsequent starts reuse it. To use a different
+# model, edit GATEWAY_DEFAULT_MODEL on the gateway service AND the model
+# name in ollama-init's command.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mini-llm-gateway-ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: mini-llm-gateway-ollama-init
+    depends_on:
+      - ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until OLLAMA_HOST=ollama:11434 ollama list >/dev/null 2>&1; do
+          echo "ollama-init: waiting for ollama..."
+          sleep 1
+        done
+        echo "ollama-init: pulling llama3.2:1b (one-time, ~1.3 GB)..."
+        OLLAMA_HOST=ollama:11434 ollama pull llama3.2:1b
+        echo "ollama-init: done."
+    restart: "no"
+
+  gateway:
+    build: .
+    container_name: mini-llm-gateway
+    depends_on:
+      ollama:
+        condition: service_started
+    environment:
+      GATEWAY_PROVIDERS: fake,ollama
+      GATEWAY_DEFAULT_PROVIDER: ollama
+      GATEWAY_DEFAULT_MODEL: llama3.2:1b
+      OLLAMA_BASE_URL: http://ollama:11434
+    ports:
+      - "8090:8090"
+    volumes:
+      - gateway-data:/data
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
+  gateway-data:

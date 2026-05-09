@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mini LLM Gateway</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Mini LLM Gateway</h1>
+      <div class="controls">
+        <label>provider <select id="provider"></select></label>
+        <label>model <input id="model" type="text" size="20"></label>
+        <label><input type="checkbox" id="stream" checked> stream</label>
+      </div>
+    </header>
+
+    <div id="chat" aria-live="polite"></div>
+
+    <div class="input-row">
+      <textarea id="input" placeholder="Type a message... (Enter to send, Shift+Enter for newline)"></textarea>
+      <div class="input-buttons">
+        <button id="send" type="button">Send</button>
+        <button id="clear" type="button" class="secondary">Clear</button>
+      </div>
+    </div>
+
+    <section class="log-section">
+      <header class="log-header">
+        <h2>Request Log</h2>
+        <button id="refresh" type="button" class="secondary">Refresh</button>
+      </header>
+      <div class="log-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>time</th>
+              <th>provider</th>
+              <th>model</th>
+              <th>status</th>
+              <th>ms</th>
+              <th>chars (in/out)</th>
+              <th>tokens (in/out)</th>
+              <th>error</th>
+            </tr>
+          </thead>
+          <tbody id="log-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

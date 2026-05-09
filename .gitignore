@@ -1,0 +1,10 @@
+/bin/
+/dist/
+*.test
+*.out
+*.db
+*.db-*
+.env
+.env.*
+!.env.example
+.DS_Store

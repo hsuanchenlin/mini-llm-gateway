@@ -1,0 +1,25 @@
+# Keep the build context small and avoid baking local state into images.
+.git
+.github
+.idea
+.vscode
+.DS_Store
+
+# Local SQLite database files
+*.db
+*.db-*
+
+# Test outputs and build artifacts
+*.test
+*.out
+/bin
+/dist
+
+# Local environment files (never let secrets into image layers)
+.env
+.env.local
+.env.*.local
+
+# Already-built local binaries
+mini-llm-gateway
+gateway
