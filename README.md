@@ -201,6 +201,58 @@ The server fails fast at startup if a configured provider is missing required va
 
 ---
 
+## Deploy on a Mac mini via Tailscale
+
+Use any always-on Mac as a personal LLM gateway reachable from every device on your tailnet. Tailscale gives each device a stable encrypted route to the gateway with no port-forwarding, no dynamic DNS, and no public exposure.
+
+**Prereqs:** Docker Desktop, Tailscale, git on the Mac mini (`brew install --cask docker tailscale && brew install git` if needed).
+
+```sh
+# On the Mac mini (in person or via SSH):
+git clone https://github.com/hsuanchenlin/mini-llm-gateway.git
+cd mini-llm-gateway
+docker compose up -d --build           # ~5 min first time (pulls ~1.6 GB of models)
+curl -s http://localhost:8090/health   # verify locally first
+
+# Make sure Tailscale is up
+sudo tailscale up
+tailscale status                       # note the "self" hostname (e.g. "mac-mini")
+```
+
+From any other tailnet device, the gateway is now reachable at `http://<machine-name>:8090/`.
+
+### HTTPS via Tailscale Serve (recommended)
+
+Cleaner URL, no port to remember, mobile keychains autofill:
+
+```sh
+# One-time: enable HTTPS in your Tailscale admin console
+# https://login.tailscale.com/admin/dns → "HTTPS Certificates" → Enable
+
+sudo tailscale serve --bg --https=443 http://localhost:8090
+```
+
+The gateway is now at `https://<machine-name>.<tailnet>.ts.net/`. Tailscale terminates TLS in front of it; the gateway itself stays plain HTTP on `localhost:8090`. To stop serving: `sudo tailscale serve --https=443 off`.
+
+### Persistence (survive reboots and sleep)
+
+| Setting | Where |
+|---|---|
+| Auto-start Docker on login | Docker Desktop → Settings → General → "Start Docker Desktop when you sign in" |
+| Don't sleep when display off | System Settings → Lock Screen → "Prevent automatic sleeping when display is off" |
+| Auto-start after power outage | System Settings → General → Login Items → "Start up automatically after a power failure" |
+| Restart containers on crash | Already in `docker-compose.yml` (`restart: unless-stopped`) |
+
+Tailscale's macOS client auto-starts at login by default, so the tailnet route comes back automatically too.
+
+### Security
+
+- **Tailnet membership = auth.** Only your Tailscale-logged-in devices can reach the gateway. Sufficient for personal use.
+- **Do NOT enable `tailscale funnel`** (the public-internet variant). The `/admin/*` endpoints have no auth — anyone who finds the URL can read or delete your documents and request log.
+- **Do NOT port-forward 8090** on your home router. Same reason.
+- If you share your tailnet with anyone, restrict access via [Tailscale ACLs](https://tailscale.com/kb/1018/acls).
+- Want to expose this beyond the tailnet later? Add a Bearer-token check to `/admin/*` and the chat endpoint first.
+
 ## Design tradeoffs
 
 Each entry: **decision · why · cost.**
