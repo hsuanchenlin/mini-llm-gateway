@@ -23,7 +23,7 @@ func newTestHandler(t *testing.T) http.Handler {
 		RequestTimeout:  5 * time.Second,
 	}
 	registry := provider.Registry{"fake": &provider.Fake{}}
-	return New(cfg, registry, store.Noop{}).Handler()
+	return New(cfg, registry, store.Noop{}, nil).Handler()
 }
 
 func TestHealth(t *testing.T) {

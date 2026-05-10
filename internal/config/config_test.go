@@ -35,6 +35,9 @@ func TestFromEnvDefaults(t *testing.T) {
 	if cfg.Port != 8090 {
 		t.Errorf("Port = %d, want 8090", cfg.Port)
 	}
+	if cfg.RequestTimeout.Seconds() != 120 {
+		t.Errorf("RequestTimeout = %v, want 120s", cfg.RequestTimeout)
+	}
 	if cfg.DefaultProvider != "fake" {
 		t.Errorf("DefaultProvider = %q, want fake", cfg.DefaultProvider)
 	}

@@ -86,6 +86,18 @@ APIs, plus a built-in `fake` provider for tests).
 - `run-ollama.sh` + `.env.example` for the no-Docker path.
 - README rewritten as an interview artifact: Docker-first quick start, ASCII architecture diagram, **Design tradeoffs** section with cost called out for every key decision, **Future improvements** section, layout map, dev/test commands.
 
+### M7 — RAG ✅
+- `internal/embed`: `Embedder` interface (mirrors `Provider`) + Fake / OpenAI / Ollama implementations + env-driven loader. `Probe()` discovers vector dimensionality at startup.
+- `internal/rag`: `Chunker` (rune-based sliding window with overlap), `Service` (ties chunker + embedder + vector store + document store, with rollback on partial failure), and two `VectorStore` implementations:
+  - `Qdrant` — REST client (EnsureCollection, Upsert, Search, DeleteByDocumentID); idempotent collection setup; `?wait=true` on writes for synchronous behavior.
+  - `InMemoryStore` — brute-force cosine similarity, `sync.RWMutex`, good for tests + small (<10k chunks) deployments.
+- `internal/store/migrations/0002_documents.sql` and `0003_request_rag.sql`. Migration tracking via a new `schema_migrations` table so non-idempotent migrations (`ALTER TABLE`) don't re-run.
+- New endpoints: `POST /admin/documents`, `GET /admin/documents`, `DELETE /admin/documents/{id}`. All return 503 when RAG is disabled.
+- Modified `POST /v1/chat/completions`: with `"rag":true`, embeds the user's last message, retrieves top-K from the vector store, and prepends the chunks as a `system` message. Retrieved chunk IDs are recorded in the request log.
+- UI gains a "Knowledge Base" panel (upload + list + delete) and a `RAG` checkbox on the chat input.
+- Compose adds a `qdrant` service and pulls `nomic-embed-text` alongside the chat model.
+- 28 new tests across `internal/embed`, `internal/rag`, `internal/store`, `internal/httpapi`. Total now 98.
+
 ## Non-goals
 - Training or running transformer internals from scratch
 - Implementing a real tokenizer (token counts stay approximate)

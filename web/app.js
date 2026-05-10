@@ -1,9 +1,11 @@
 // Mini LLM Gateway — vanilla JS frontend.
-// Talks to: GET /admin/providers, GET /admin/requests, POST /v1/chat/completions.
+// Talks to: GET /admin/providers, GET/POST/DELETE /admin/documents,
+//           GET /admin/requests, POST /v1/chat/completions.
 
 const $ = (id) => document.getElementById(id);
 
 let messages = []; // running conversation history (sent verbatim to /v1/chat/completions)
+let ragAvailable = false;
 
 async function loadProviders() {
   const resp = await fetch('/admin/providers');
@@ -18,6 +20,78 @@ async function loadProviders() {
     sel.appendChild(opt);
   }
   $('model').value = data.default_model;
+}
+
+async function loadDocuments() {
+  const resp = await fetch('/admin/documents');
+  if (resp.status === 503) {
+    ragAvailable = false;
+    $('rag').disabled = true;
+    $('rag').checked = false;
+    $('rag-status').textContent = 'RAG disabled (set GATEWAY_EMBEDDER to enable)';
+    $('upload-details').open = false;
+    $('upload-details').style.display = 'none';
+    return;
+  }
+  ragAvailable = true;
+  $('rag').disabled = false;
+  $('rag-status').textContent = '';
+  $('upload-details').style.display = '';
+  const data = await resp.json();
+  const tbody = $('docs-body');
+  tbody.innerHTML = '';
+  for (const d of (data.documents || [])) {
+    const tr = document.createElement('tr');
+    tr.appendChild(td(d.id, 'mono'));
+    tr.appendChild(td(d.title));
+    tr.appendChild(td(d.chunk_count));
+    tr.appendChild(td(new Date(d.created_at).toLocaleString()));
+    const delTd = document.createElement('td');
+    const delBtn = document.createElement('button');
+    delBtn.textContent = 'delete';
+    delBtn.className = 'secondary tiny';
+    delBtn.onclick = () => deleteDocument(d.id);
+    delTd.appendChild(delBtn);
+    tr.appendChild(delTd);
+    tbody.appendChild(tr);
+  }
+}
+
+async function uploadDocument() {
+  const title = $('doc-title').value.trim();
+  const body = $('doc-body').value.trim();
+  if (!title || !body) {
+    alert('Title and body are required');
+    return;
+  }
+  $('upload').disabled = true;
+  try {
+    const resp = await fetch('/admin/documents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, body }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      alert(`Upload failed: ${err?.error?.message || resp.status}`);
+      return;
+    }
+    $('doc-title').value = '';
+    $('doc-body').value = '';
+    await loadDocuments();
+  } finally {
+    $('upload').disabled = false;
+  }
+}
+
+async function deleteDocument(id) {
+  if (!confirm(`Delete document ${id}?`)) return;
+  const resp = await fetch('/admin/documents/' + encodeURIComponent(id), { method: 'DELETE' });
+  if (!resp.ok && resp.status !== 404) {
+    alert(`Delete failed: HTTP ${resp.status}`);
+    return;
+  }
+  await loadDocuments();
 }
 
 async function loadLog() {
@@ -36,6 +110,7 @@ async function loadLog() {
     tr.appendChild(td(r.latency_ms));
     tr.appendChild(td(`${r.prompt_chars}/${r.completion_chars}`));
     tr.appendChild(td(`${r.prompt_tokens || 0}/${r.completion_tokens || 0}`));
+    tr.appendChild(td(r.rag_chunk_ids ? r.rag_chunk_ids.split(',').length : ''));
     tr.appendChild(td(r.error || '', 'error'));
     tbody.appendChild(tr);
   }
@@ -74,6 +149,7 @@ async function sendMessage() {
   appendMessage('user', text);
 
   const streamMode = $('stream').checked;
+  const useRAG = $('rag').checked && ragAvailable;
   const assistantEl = appendMessage('assistant', '');
 
   try {
@@ -84,6 +160,7 @@ async function sendMessage() {
         provider: $('provider').value,
         model: $('model').value,
         stream: streamMode,
+        rag: useRAG,
         messages: messages,
       }),
     });
@@ -130,7 +207,6 @@ async function consumeSSE(resp, onDelta) {
     if (done) break;
     buf += decoder.decode(value, { stream: true });
 
-    // SSE events are separated by blank lines; within an event we read `data:` lines.
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, nl).trimEnd();
@@ -157,6 +233,7 @@ async function consumeSSE(resp, onDelta) {
 
 window.addEventListener('DOMContentLoaded', async () => {
   await loadProviders();
+  await loadDocuments();
   await loadLog();
 
   $('send').addEventListener('click', sendMessage);
@@ -165,6 +242,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     $('chat').innerHTML = '';
   });
   $('refresh').addEventListener('click', loadLog);
+  $('upload').addEventListener('click', uploadDocument);
 
   $('input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

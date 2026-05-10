@@ -158,3 +158,46 @@ td.error {
 }
 td.status-ok { color: #27ae60; }
 td.status-err { color: #c0392b; }
+td.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.78rem; color: #666; }
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.knowledge-section { margin-top: 2rem; }
+
+.muted { font-size: 0.8rem; color: #888; }
+
+#upload-details {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  background: white;
+  margin-bottom: 0.75rem;
+}
+#upload-details summary {
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+  user-select: none;
+}
+.upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.upload-form #doc-body {
+  min-height: 100px;
+  resize: vertical;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+button.tiny {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+}

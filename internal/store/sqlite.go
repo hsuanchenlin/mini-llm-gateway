@@ -39,19 +39,54 @@ func OpenSQLite(path string) (*SQLite, error) {
 	return &SQLite{db: db}, nil
 }
 
+// applyMigrations is idempotent. It records each applied migration in a
+// schema_migrations table so non-idempotent migrations (e.g. ALTER TABLE)
+// don't get re-run on subsequent opens.
 func applyMigrations(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+		name       TEXT PRIMARY KEY,
+		applied_ms INTEGER NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("store: create schema_migrations: %w", err)
+	}
+
+	rows, err := db.Query(`SELECT name FROM schema_migrations`)
+	if err != nil {
+		return fmt.Errorf("store: read schema_migrations: %w", err)
+	}
+	applied := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return fmt.Errorf("store: scan migration: %w", err)
+		}
+		applied[name] = true
+	}
+	rows.Close()
+
 	entries, err := migrationFS.ReadDir("migrations")
 	if err != nil {
 		return fmt.Errorf("store: read migrations dir: %w", err)
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+
 	for _, e := range entries {
+		if applied[e.Name()] {
+			continue
+		}
 		body, err := migrationFS.ReadFile("migrations/" + e.Name())
 		if err != nil {
 			return fmt.Errorf("store: read %s: %w", e.Name(), err)
 		}
 		if _, err := db.Exec(string(body)); err != nil {
 			return fmt.Errorf("store: apply %s: %w", e.Name(), err)
+		}
+		if _, err := db.Exec(
+			`INSERT INTO schema_migrations (name, applied_ms) VALUES (?, ?)`,
+			e.Name(), time.Now().UnixMilli(),
+		); err != nil {
+			return fmt.Errorf("store: record migration %s: %w", e.Name(), err)
 		}
 	}
 	return nil
@@ -63,8 +98,8 @@ func (s *SQLite) Log(ctx context.Context, e Entry) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO requests
 		 (id, ts_ms, provider, model, latency_ms, status_code, error_text,
-		  prompt_chars, completion_chars, prompt_tokens, completion_tokens)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  prompt_chars, completion_chars, prompt_tokens, completion_tokens, rag_chunk_ids)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID,
 		e.Timestamp.UnixMilli(),
 		e.Provider,
@@ -76,6 +111,7 @@ func (s *SQLite) Log(ctx context.Context, e Entry) error {
 		e.CompletionChars,
 		e.PromptTokens,
 		e.CompletionTokens,
+		e.RagChunkIDs,
 	)
 	if err != nil {
 		return fmt.Errorf("store: insert: %w", err)
@@ -89,7 +125,7 @@ func (s *SQLite) List(ctx context.Context, limit int, before time.Time) ([]Entry
 	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, ts_ms, provider, model, latency_ms, status_code, error_text,
-		        prompt_chars, completion_chars, prompt_tokens, completion_tokens
+		        prompt_chars, completion_chars, prompt_tokens, completion_tokens, rag_chunk_ids
 		 FROM requests
 		 WHERE ts_ms < ?
 		 ORDER BY ts_ms DESC
@@ -108,7 +144,7 @@ func (s *SQLite) List(ctx context.Context, limit int, before time.Time) ([]Entry
 		if err := rows.Scan(
 			&e.ID, &tsMs, &e.Provider, &e.Model, &e.LatencyMs, &e.StatusCode,
 			&e.ErrorText, &e.PromptChars, &e.CompletionChars,
-			&e.PromptTokens, &e.CompletionTokens,
+			&e.PromptTokens, &e.CompletionTokens, &e.RagChunkIDs,
 		); err != nil {
 			return nil, fmt.Errorf("store: scan: %w", err)
 		}

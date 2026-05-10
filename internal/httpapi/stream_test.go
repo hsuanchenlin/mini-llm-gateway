@@ -36,7 +36,7 @@ func newStreamTestServer(t *testing.T, repo store.Repository) *httptest.Server {
 		"fake":      &provider.Fake{},
 		"no-stream": nonStreamingProvider{},
 	}
-	srv := httptest.NewServer(New(cfg, registry, repo).Handler())
+	srv := httptest.NewServer(New(cfg, registry, repo, nil).Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }

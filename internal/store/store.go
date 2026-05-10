@@ -18,6 +18,7 @@ type Entry struct {
 	CompletionChars  int
 	PromptTokens     int
 	CompletionTokens int
+	RagChunkIDs      string // comma-separated chunk UUIDs from the vector store; empty when RAG wasn't used
 }
 
 // Repository persists request logs and lets the admin endpoints read them back.

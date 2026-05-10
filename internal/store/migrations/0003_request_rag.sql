@@ -1,0 +1,1 @@
+ALTER TABLE requests ADD COLUMN rag_chunk_ids TEXT NOT NULL DEFAULT '';

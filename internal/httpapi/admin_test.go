@@ -28,7 +28,7 @@ func newAdminTestServer(t *testing.T) (http.Handler, *store.SQLite) {
 		RequestTimeout:  5 * time.Second,
 	}
 	registry := provider.Registry{"fake": &provider.Fake{}}
-	return New(cfg, registry, repo).Handler(), repo
+	return New(cfg, registry, repo, nil).Handler(), repo
 }
 
 func TestChatCompletionsLogsHappyPath(t *testing.T) {

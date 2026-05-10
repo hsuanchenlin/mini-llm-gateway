@@ -6,12 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"mini-llm-gateway/internal/config"
 	"mini-llm-gateway/internal/provider"
+	"mini-llm-gateway/internal/rag"
 	"mini-llm-gateway/internal/store"
 	"mini-llm-gateway/web"
 )
@@ -20,10 +23,13 @@ type Server struct {
 	cfg       config.Config
 	providers provider.Registry
 	repo      store.Repository
+	rag       *rag.Service // optional; nil disables RAG
 }
 
-func New(cfg config.Config, providers provider.Registry, repo store.Repository) *Server {
-	return &Server{cfg: cfg, providers: providers, repo: repo}
+// New constructs a Server. Pass nil for ragSvc to disable RAG (the rag
+// endpoints will then return 503 and chat requests with rag=true will 400).
+func New(cfg config.Config, providers provider.Registry, repo store.Repository, ragSvc *rag.Service) *Server {
+	return &Server{cfg: cfg, providers: providers, repo: repo, rag: ragSvc}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -32,6 +38,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("GET /admin/requests", s.handleAdminRequests)
 	mux.HandleFunc("GET /admin/providers", s.handleAdminProviders)
+	mux.HandleFunc("POST /admin/documents", s.handleAdminCreateDocument)
+	mux.HandleFunc("GET /admin/documents", s.handleAdminListDocuments)
+	mux.HandleFunc("DELETE /admin/documents/{id}", s.handleAdminDeleteDocument)
 	mux.Handle("GET /", http.FileServerFS(web.FS))
 	return mux
 }
@@ -47,6 +56,7 @@ type chatRequest struct {
 	Messages []provider.Message `json:"messages"`
 	Stream   bool               `json:"stream"`
 	Provider string             `json:"provider"`
+	RAG      bool               `json:"rag"`
 }
 
 type chatResponse struct {
@@ -124,6 +134,34 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.RequestTimeout)
 	defer cancel()
 
+	if req.RAG {
+		if s.rag == nil {
+			fail(http.StatusBadRequest, "rag_disabled", "RAG is not configured on this gateway (set GATEWAY_EMBEDDER)")
+			return
+		}
+		var lastUser string
+		for i := len(req.Messages) - 1; i >= 0; i-- {
+			if req.Messages[i].Role == "user" {
+				lastUser = req.Messages[i].Content
+				break
+			}
+		}
+		if lastUser != "" {
+			hits, err := s.rag.Retrieve(ctx, lastUser, s.cfg.RAGTopK)
+			if err != nil {
+				log.Printf("rag: retrieve failed: %v", err)
+			} else if len(hits) > 0 {
+				sysContent := buildRAGContext(hits)
+				req.Messages = append([]provider.Message{{Role: "system", Content: sysContent}}, req.Messages...)
+				ids := make([]string, len(hits))
+				for i, h := range hits {
+					ids[i] = h.ID
+				}
+				entry.RagChunkIDs = strings.Join(ids, ",")
+			}
+		}
+	}
+
 	if req.Stream {
 		s.streamChat(w, ctx, p, providerName, model, id, started, req.Messages, &entry, fail)
 		return
@@ -182,4 +220,17 @@ func randomID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// buildRAGContext formats retrieved chunks into a system-message preamble.
+// Document IDs are kept in the output so debugging "which doc did this answer come from"
+// is possible from the response alone.
+func buildRAGContext(hits []rag.SearchHit) string {
+	var sb strings.Builder
+	sb.WriteString("Use the following context to answer the user's question. ")
+	sb.WriteString("If the answer is not in the context, say so honestly.\n\nContext:\n")
+	for _, h := range hits {
+		fmt.Fprintf(&sb, "\n[doc=%s chunk=%d]\n%s\n", h.DocumentID, h.ChunkIndex, h.Text)
+	}
+	return sb.String()
 }
