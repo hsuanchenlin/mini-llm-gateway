@@ -25,6 +25,8 @@ type Entry struct {
 type Repository interface {
 	Log(ctx context.Context, e Entry) error
 	List(ctx context.Context, limit int, before time.Time) ([]Entry, error)
+	StatsByModel(ctx context.Context, since time.Time) ([]ModelStat, error)
+	StatsByDay(ctx context.Context, days int) ([]DayStat, error)
 	Close() error
 }
 
@@ -32,6 +34,8 @@ type Repository interface {
 // need persistence.
 type Noop struct{}
 
-func (Noop) Log(context.Context, Entry) error                      { return nil }
-func (Noop) List(context.Context, int, time.Time) ([]Entry, error) { return nil, nil }
-func (Noop) Close() error                                          { return nil }
+func (Noop) Log(context.Context, Entry) error                                       { return nil }
+func (Noop) List(context.Context, int, time.Time) ([]Entry, error)                  { return nil, nil }
+func (Noop) StatsByModel(context.Context, time.Time) ([]ModelStat, error)           { return nil, nil }
+func (Noop) StatsByDay(context.Context, int) ([]DayStat, error)                     { return nil, nil }
+func (Noop) Close() error                                                           { return nil }

@@ -201,3 +201,64 @@ button.tiny {
   font-size: 0.75rem;
   padding: 0.2rem 0.5rem;
 }
+
+.cost-section { margin-top: 2rem; }
+
+.cost-summary {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+.cost-card {
+  flex: 1 1 140px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.6rem 0.85rem;
+}
+.cost-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #666;
+  letter-spacing: 0.04em;
+}
+.cost-value {
+  font-size: 1.4rem;
+  font-weight: 600;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  margin-top: 0.2rem;
+}
+
+#cost-chart {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+.cost-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 90px;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  padding: 0.25rem 0;
+}
+.cost-row + .cost-row { border-top: 1px solid #f1f1f1; }
+.cost-row .name { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.78rem; }
+.cost-row .bar {
+  height: 14px;
+  background: #ecf0f1;
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.cost-row .bar-fill { background: #2c3e50; height: 100%; }
+.cost-row .amount {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.82rem;
+  text-align: right;
+  font-weight: 600;
+}
+.cost-row.unknown .amount::after { content: " *"; color: #888; }
+.cost-empty { padding: 0.5rem; color: #888; font-size: 0.85rem; }

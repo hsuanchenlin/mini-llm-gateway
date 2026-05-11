@@ -20,6 +20,10 @@ type Config struct {
 
 	DBPath string
 
+	// AuthToken, when non-empty, requires Authorization: Bearer <token> on
+	// /v1/chat/completions and all /admin/* endpoints. Empty disables auth.
+	AuthToken string
+
 	// Embedder selection (empty disables RAG).
 	Embedder         string // "fake" | "ollama" | "openai"
 	OllamaEmbedModel string
@@ -48,7 +52,8 @@ func FromEnv() Config {
 		OpenAIBaseURL: getenv("OPENAI_BASE_URL", "https://api.openai.com"),
 		OpenAIAPIKey:  os.Getenv("OPENAI_API_KEY"),
 
-		DBPath: getenv("GATEWAY_DB_PATH", "mini-llm-gateway.db"),
+		DBPath:    getenv("GATEWAY_DB_PATH", "mini-llm-gateway.db"),
+		AuthToken: os.Getenv("GATEWAY_AUTH_TOKEN"),
 
 		Embedder:         os.Getenv("GATEWAY_EMBEDDER"),
 		OllamaEmbedModel: getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text"),

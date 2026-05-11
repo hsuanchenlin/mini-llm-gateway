@@ -163,3 +163,58 @@ func TestHealthRejectsPost(t *testing.T) {
 		t.Errorf("status = %d, want 405", rr.Code)
 	}
 }
+
+// newAuthedTestHandler is a copy of newTestHandler but with AuthToken set.
+func newAuthedTestHandler(t *testing.T, token string) http.Handler {
+	t.Helper()
+	cfg := config.Config{
+		Port:            0,
+		DefaultProvider: "fake",
+		DefaultModel:    "fake-1",
+		RequestTimeout:  5 * time.Second,
+		AuthToken:       token,
+	}
+	registry := provider.Registry{"fake": &provider.Fake{}}
+	return New(cfg, registry, store.Noop{}, nil).Handler()
+}
+
+func TestAuthWhenTokenSet_HealthAndUIStayOpen(t *testing.T) {
+	h := newAuthedTestHandler(t, "secret")
+	for _, path := range []string{"/health", "/", "/style.css"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if rr.Code != http.StatusOK {
+			t.Errorf("%s status = %d, want 200 (open endpoint)", path, rr.Code)
+		}
+	}
+}
+
+func TestAuthWhenTokenSet_ChatRequiresAuth(t *testing.T) {
+	h := newAuthedTestHandler(t, "secret")
+	body := bytes.NewReader([]byte(`{"messages":[{"role":"user","content":"hi"}]}`))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", body))
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("no-auth chat status = %d, want 401", rr.Code)
+	}
+}
+
+func TestAuthWhenTokenSet_AdminRequiresAuth(t *testing.T) {
+	h := newAuthedTestHandler(t, "secret")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/admin/providers", nil))
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("no-auth admin status = %d, want 401", rr.Code)
+	}
+}
+
+func TestAuthWhenTokenSet_CorrectTokenPasses(t *testing.T) {
+	h := newAuthedTestHandler(t, "secret")
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/providers", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("authed admin status = %d, want 200", rr.Code)
+	}
+}

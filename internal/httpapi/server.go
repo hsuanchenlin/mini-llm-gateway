@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"mini-llm-gateway/internal/auth"
 	"mini-llm-gateway/internal/config"
 	"mini-llm-gateway/internal/provider"
 	"mini-llm-gateway/internal/rag"
@@ -34,14 +35,20 @@ func New(cfg config.Config, providers provider.Registry, repo store.Repository, 
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	requireAuth := auth.RequireBearer(s.cfg.AuthToken)
+
+	// Open endpoints — no auth so monitoring, browser UI loads, and bookmarks work.
 	mux.HandleFunc("GET /health", s.handleHealth)
-	mux.HandleFunc("POST /v1/chat/completions", s.handleChatCompletions)
-	mux.HandleFunc("GET /admin/requests", s.handleAdminRequests)
-	mux.HandleFunc("GET /admin/providers", s.handleAdminProviders)
-	mux.HandleFunc("POST /admin/documents", s.handleAdminCreateDocument)
-	mux.HandleFunc("GET /admin/documents", s.handleAdminListDocuments)
-	mux.HandleFunc("DELETE /admin/documents/{id}", s.handleAdminDeleteDocument)
 	mux.Handle("GET /", http.FileServerFS(web.FS))
+
+	// Protected endpoints — chat (cost-incurring) + all admin (sensitive).
+	mux.Handle("POST /v1/chat/completions", requireAuth(http.HandlerFunc(s.handleChatCompletions)))
+	mux.Handle("GET /admin/requests", requireAuth(http.HandlerFunc(s.handleAdminRequests)))
+	mux.Handle("GET /admin/providers", requireAuth(http.HandlerFunc(s.handleAdminProviders)))
+	mux.Handle("GET /admin/stats", requireAuth(http.HandlerFunc(s.handleAdminStats)))
+	mux.Handle("POST /admin/documents", requireAuth(http.HandlerFunc(s.handleAdminCreateDocument)))
+	mux.Handle("GET /admin/documents", requireAuth(http.HandlerFunc(s.handleAdminListDocuments)))
+	mux.Handle("DELETE /admin/documents/{id}", requireAuth(http.HandlerFunc(s.handleAdminDeleteDocument)))
 	return mux
 }
 

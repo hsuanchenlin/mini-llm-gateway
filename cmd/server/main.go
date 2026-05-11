@@ -60,10 +60,14 @@ func main() {
 	go func() {
 		ragStatus := "off"
 		if ragSvc != nil {
-			ragStatus = fmt.Sprintf("%s(embedder=%s,store=%s)", "on", cfg.Embedder, cfg.VectorStore)
+			ragStatus = fmt.Sprintf("on(embedder=%s,store=%s)", cfg.Embedder, cfg.VectorStore)
 		}
-		log.Printf("mini-llm-gateway listening on %s (providers=%v default=%s model=%s db=%s rag=%s)",
-			srv.Addr, registry.Names(), cfg.DefaultProvider, cfg.DefaultModel, cfg.DBPath, ragStatus)
+		authStatus := "off"
+		if cfg.AuthToken != "" {
+			authStatus = "on(bearer)"
+		}
+		log.Printf("mini-llm-gateway listening on %s (providers=%v default=%s model=%s db=%s rag=%s auth=%s)",
+			srv.Addr, registry.Names(), cfg.DefaultProvider, cfg.DefaultModel, cfg.DBPath, ragStatus, authStatus)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("server error: %v", err)
 		}

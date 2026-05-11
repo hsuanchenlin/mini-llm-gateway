@@ -98,7 +98,16 @@ APIs, plus a built-in `fake` provider for tests).
 - Compose adds a `qdrant` service and pulls `nomic-embed-text` alongside the chat model.
 - 28 new tests across `internal/embed`, `internal/rag`, `internal/store`, `internal/httpapi`. Total now 98.
 
-## Non-goals
+### M8 — Auth + cost dashboard ✅
+- `internal/auth`: `RequireBearer(token)` middleware. Empty token = no-op so existing setups keep working. Constant-time compare via `crypto/subtle.ConstantTimeCompare`. Sends `WWW-Authenticate: Bearer realm="..."` on 401.
+- Routes wired so `/health` and `GET /` (web UI + assets) stay open; `POST /v1/chat/completions` and every `/admin/*` route require the token when configured.
+- `web/app.js`: `apiFetch` wrapper sends `Authorization: Bearer …` from `localStorage`; on 401 it `window.prompt`s the user, stores the new token, and retries once.
+- `internal/pricing`: hardcoded USD/million-token table (OpenAI, Anthropic, common Ollama models). `USD(model, in, out)` returns 0 for unknown models, flagged via `Known()`.
+- `internal/store/stats.go`: `StatsByModel(ctx, since)` and `StatsByDay(ctx, days)` aggregate the request log; failed requests excluded from token totals.
+- New `GET /admin/stats` endpoint returns `total_usd`, `today_usd` (computed via two queries — all-time + start-of-today — instead of a wrong proration), per-model breakdown with `pricing_known` flag, per-day request volume.
+- `GET /admin/requests` rows now carry a `usd` field per row.
+- New "Cost" panel in the UI: today/all-time totals + per-model SVG bar chart (no Chart.js dependency).
+- 21 new tests (auth 6, pricing 6, stats SQL 3, stats HTTP 3, server-level auth 3). Total now 120.
 - Training or running transformer internals from scratch
 - Implementing a real tokenizer (token counts stay approximate)
 - Multi-tenant auth / billing (one gateway-level API key is enough)

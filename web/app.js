@@ -6,9 +6,28 @@ const $ = (id) => document.getElementById(id);
 
 let messages = []; // running conversation history (sent verbatim to /v1/chat/completions)
 let ragAvailable = false;
+let authToken = localStorage.getItem('mlg_auth_token') || '';
+
+// apiFetch wraps fetch so we send the Bearer token and prompt the user on 401.
+// Retries the request once with the new token if the user provides one.
+async function apiFetch(url, options = {}) {
+  const headers = Object.assign({}, options.headers || {});
+  if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+  let resp = await fetch(url, { ...options, headers });
+  if (resp.status === 401) {
+    const t = window.prompt('This gateway requires a Bearer token (GATEWAY_AUTH_TOKEN). Enter it:');
+    if (t) {
+      authToken = t.trim();
+      localStorage.setItem('mlg_auth_token', authToken);
+      headers['Authorization'] = 'Bearer ' + authToken;
+      resp = await fetch(url, { ...options, headers });
+    }
+  }
+  return resp;
+}
 
 async function loadProviders() {
-  const resp = await fetch('/admin/providers');
+  const resp = await apiFetch('/admin/providers');
   const data = await resp.json();
   const sel = $('provider');
   sel.innerHTML = '';
@@ -23,7 +42,7 @@ async function loadProviders() {
 }
 
 async function loadDocuments() {
-  const resp = await fetch('/admin/documents');
+  const resp = await apiFetch('/admin/documents');
   if (resp.status === 503) {
     ragAvailable = false;
     $('rag').disabled = true;
@@ -66,7 +85,7 @@ async function uploadDocument() {
   }
   $('upload').disabled = true;
   try {
-    const resp = await fetch('/admin/documents', {
+    const resp = await apiFetch('/admin/documents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, body }),
@@ -86,7 +105,7 @@ async function uploadDocument() {
 
 async function deleteDocument(id) {
   if (!confirm(`Delete document ${id}?`)) return;
-  const resp = await fetch('/admin/documents/' + encodeURIComponent(id), { method: 'DELETE' });
+  const resp = await apiFetch('/admin/documents/' + encodeURIComponent(id), { method: 'DELETE' });
   if (!resp.ok && resp.status !== 404) {
     alert(`Delete failed: HTTP ${resp.status}`);
     return;
@@ -94,8 +113,55 @@ async function deleteDocument(id) {
   await loadDocuments();
 }
 
+function fmtUSD(v) {
+  if (v < 0.01) return '$' + v.toFixed(5).replace(/0+$/, '').replace(/\.$/, '.0');
+  return '$' + v.toFixed(2);
+}
+
+async function loadCost() {
+  const resp = await apiFetch('/admin/stats');
+  if (!resp.ok) return;
+  const data = await resp.json();
+  $('cost-today').textContent = fmtUSD(data.today_usd || 0);
+  $('cost-total').textContent = fmtUSD(data.total_usd || 0);
+
+  const chart = $('cost-chart');
+  chart.innerHTML = '';
+  const models = data.by_model || [];
+  if (models.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'cost-empty';
+    empty.textContent = 'No usage yet. Send a chat request to populate.';
+    chart.appendChild(empty);
+    return;
+  }
+  const maxUSD = Math.max(...models.map(m => m.usd), 0.000001);
+  for (const m of models) {
+    const row = document.createElement('div');
+    row.className = 'cost-row' + (m.pricing_known ? '' : ' unknown');
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = m.model;
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    const fill = document.createElement('div');
+    fill.className = 'bar-fill';
+    fill.style.width = (Math.max(0.5, (m.usd / maxUSD) * 100)) + '%';
+    if (m.usd === 0) fill.style.background = '#bdc3c7';
+    bar.appendChild(fill);
+    const amt = document.createElement('div');
+    amt.className = 'amount';
+    amt.textContent = fmtUSD(m.usd);
+    amt.title = `${m.requests} reqs · ${m.prompt_tokens} in / ${m.completion_tokens} out`;
+    row.appendChild(name);
+    row.appendChild(bar);
+    row.appendChild(amt);
+    chart.appendChild(row);
+  }
+}
+
 async function loadLog() {
-  const resp = await fetch('/admin/requests?limit=20');
+  const resp = await apiFetch('/admin/requests?limit=20');
   const data = await resp.json();
   const tbody = $('log-body');
   tbody.innerHTML = '';
@@ -153,7 +219,7 @@ async function sendMessage() {
   const assistantEl = appendMessage('assistant', '');
 
   try {
-    const resp = await fetch('/v1/chat/completions', {
+    const resp = await apiFetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -191,6 +257,7 @@ async function sendMessage() {
   } finally {
     $('send').disabled = false;
     loadLog();
+    loadCost();
   }
 }
 
@@ -235,6 +302,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   await loadProviders();
   await loadDocuments();
   await loadLog();
+  await loadCost();
 
   $('send').addEventListener('click', sendMessage);
   $('clear').addEventListener('click', () => {
@@ -242,6 +310,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     $('chat').innerHTML = '';
   });
   $('refresh').addEventListener('click', loadLog);
+  $('refresh-cost').addEventListener('click', loadCost);
   $('upload').addEventListener('click', uploadDocument);
 
   $('input').addEventListener('keydown', (e) => {

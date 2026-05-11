@@ -12,7 +12,7 @@ This is a portfolio project. Goal: demonstrate backend engineering, LLM
 application infrastructure, streaming APIs, observability, and cloud
 deployment — *not* to reimplement transformer internals.
 
-**Status:** M1 skeleton ✅ · M2 real providers ✅ · M3 SQLite logging + admin ✅ · M4 SSE streaming ✅ · M5 web UI ✅ · M6 Docker + docs ✅ · M7 RAG ✅. See [ROADMAP.md](./ROADMAP.md) for the full milestone breakdown.
+**Status:** M1 skeleton ✅ · M2 real providers ✅ · M3 SQLite logging + admin ✅ · M4 SSE streaming ✅ · M5 web UI ✅ · M6 Docker + docs ✅ · M7 RAG ✅ · M8 Auth + cost dashboard ✅. See [ROADMAP.md](./ROADMAP.md) for the full milestone breakdown.
 
 ---
 
@@ -174,6 +174,37 @@ curl -s 'http://localhost:8090/admin/requests?limit=20&before=2026-05-08T21:01:4
 
 Each entry has `id`, `ts`, `provider`, `model`, `latency_ms`, `status_code`, `error` (on failure), `prompt_chars`, `completion_chars`, and `prompt_tokens` / `completion_tokens` when the upstream reports them.
 
+## Auth (optional)
+
+When `GATEWAY_AUTH_TOKEN` is set, `POST /v1/chat/completions` and every `/admin/*` endpoint require `Authorization: Bearer <token>`. `/health` and the web UI itself stay open.
+
+```sh
+GATEWAY_AUTH_TOKEN=$(openssl rand -hex 32) docker compose up -d --build
+
+# API call from the terminal:
+curl -s http://localhost:8090/admin/providers \
+  -H "Authorization: Bearer $GATEWAY_AUTH_TOKEN"
+
+# Web UI: open the page once, on the first 401 you'll be prompted; the
+# token is stored in localStorage and sent on every subsequent request.
+```
+
+The compare is constant-time (`crypto/subtle.ConstantTimeCompare`) so attackers can't time-guess the token. Leave `GATEWAY_AUTH_TOKEN` unset for "anyone on the tailnet can use it" — appropriate when the gateway is only reachable inside a tailnet.
+
+## Cost dashboard
+
+The gateway computes USD per request from token counts × a built-in pricing table (see `internal/pricing/pricing.go`). Local models like `llama3.2:1b` are $0; OpenAI / Anthropic models bill at their public per-million-token rates.
+
+- `GET /admin/stats` returns `total_usd`, `today_usd`, per-model breakdown (requests, tokens, $, `pricing_known` flag), and per-day request volume for the last 30 days.
+- Each row in `GET /admin/requests` now carries a `usd` field.
+- The web UI's **Cost** panel shows today's $, all-time $, and a per-model bar chart.
+
+```sh
+curl -s http://localhost:8090/admin/stats?days=7 | jq
+```
+
+To price a new model, add a row to `pricing.table`. Anything not in the table is treated as $0 and flagged in the API as `pricing_known: false`.
+
 ## Configuration
 
 | Env var                            | Default                       | Purpose                                                    |
@@ -187,6 +218,7 @@ Each entry has `id`, `ts`, `provider`, `model`, `latency_ms`, `status_code`, `er
 | `OPENAI_BASE_URL`                  | `https://api.openai.com`      | Required if `openai` is enabled                            |
 | `OPENAI_API_KEY`                   | *(unset)*                     | Required if `openai` is enabled. Set to any non-empty string for local OpenAI-compat servers without auth. |
 | `GATEWAY_DB_PATH`                  | `mini-llm-gateway.db`         | SQLite file used for the request log                       |
+| `GATEWAY_AUTH_TOKEN`               | *(unset)*                     | Bearer token required on `/v1/chat/*` + `/admin/*`. Empty disables auth. |
 | `GATEWAY_EMBEDDER`                 | *(unset)*                     | `fake` / `ollama` / `openai`. Empty disables RAG.          |
 | `OLLAMA_EMBED_MODEL`               | `nomic-embed-text`            | Embedding model name on the Ollama backend                 |
 | `OPENAI_EMBED_MODEL`               | `text-embedding-3-small`      | Embedding model name on the OpenAI-compatible backend      |
@@ -287,11 +319,13 @@ Each entry: **decision · why · cost.**
 cmd/server/        program entrypoint; loads config, builds registry, starts HTTP server, graceful shutdown
 internal/config/   env-driven configuration
 internal/provider/ Provider + Streamer interfaces, Registry, BuildRegistry, and Fake/Ollama/OpenAI implementations
-internal/store/    Repository interface + SQLite request log + documents table; embedded migrations
+internal/store/    Repository interface + SQLite request log + documents + stats; embedded migrations
 internal/embed/    Embedder interface + Fake/Ollama/OpenAI implementations
 internal/rag/      Chunker + Qdrant + InMemoryStore + Service that ties it all together
-internal/httpapi/  HTTP handlers (chat completions, streaming, admin, RAG, static UI mount), OpenAI-compatible wire types
-web/               Vanilla HTML/JS chat UI + knowledge panel; embedded into the binary via embed.FS
+internal/auth/     Bearer-token middleware (constant-time compare; no-op when disabled)
+internal/pricing/  Per-model USD/million-token table + USD() helper
+internal/httpapi/  HTTP handlers (chat, streaming, admin, RAG, stats, static UI mount), OpenAI-compatible wire types
+web/               Vanilla HTML/JS chat UI + knowledge panel + cost panel; embedded via embed.FS
 Dockerfile         Multi-stage; builds a static binary, runs as non-root on alpine
 docker-compose.yml gateway + ollama (chat + embeddings) + ollama-init + qdrant
 run-ollama.sh      Convenience launcher for the no-Docker Ollama path
